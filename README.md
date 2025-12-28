@@ -39,6 +39,11 @@ git clone https://github.com/AndrewJLockhart/LegoSorterAlgo.git
 cd LegoSorterAlgo
 ```
 
+Optionally, install the package in development mode:
+```bash
+pip install -e .
+```
+
 ## Usage
 
 ```python

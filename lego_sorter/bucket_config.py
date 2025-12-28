@@ -1,13 +1,13 @@
 """BucketConfig class for defining bucket configuration."""
 
-from typing import List
+from typing import List, Optional
 from .lego_criteria import LegoCriteria
 
 
 class BucketConfig:
     """Configuration for a bucket containing a list of criteria to match."""
     
-    def __init__(self, criteria: List[LegoCriteria] = None):
+    def __init__(self, criteria: Optional[List[LegoCriteria]] = None):
         """Initialize a BucketConfig.
         
         Args:

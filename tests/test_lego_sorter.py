@@ -1,11 +1,6 @@
 """Tests for the lego_sorter package."""
 
 import unittest
-import sys
-import os
-
-# Add the parent directory to the path to import lego_sorter
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from lego_sorter import LegoCriteria, BucketConfig, Bucket, Layer, SortingMachine
 

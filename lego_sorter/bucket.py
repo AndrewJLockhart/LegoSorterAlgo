@@ -1,12 +1,13 @@
 """Bucket class for representing a sorting bucket."""
 
+from typing import Optional
 from .bucket_config import BucketConfig
 
 
 class Bucket:
     """A bucket at a specific position with a configuration."""
     
-    def __init__(self, position: int, config: BucketConfig = None):
+    def __init__(self, position: int, config: Optional[BucketConfig] = None):
         """Initialize a Bucket.
         
         Args:
