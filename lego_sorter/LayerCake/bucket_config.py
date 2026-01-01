@@ -114,28 +114,6 @@ class BucketConfig:
             "allow_extension": self.allow_extension,
             "allow_fallback_if_disabled": self.allow_fallback_if_disabled
         }
-        """
-        Evaluate a part and color against all criteria in this bucket.
-        
-        Args:
-            rb_part: RbParts object or None
-            rb_col: RbColours object, int ID, or None
-            current_quantities: List of current quantities corresponding to self.criteria
-            
-        Returns:
-            A tuple of (specificity, criteria_index).
-            Specificity is -1 if no criteria matches or if the matching criteria is full.
-            criteria_index is the index of the matching criteria in self.criteria.
-        """
-        for i, crit in enumerate(self.criteria):
-            # Check if this criteria is already full
-            if crit.required_quantity is not None and current_quantities[i] >= crit.required_quantity:
-                continue
-                
-            if crit.evaluator.evaluate(rb_part, rb_col):
-                return crit.evaluator.specificity, i
-                
-        return -1, -1
 
     def __repr__(self):
         return f"BucketConfig(criteria={self.criteria})"

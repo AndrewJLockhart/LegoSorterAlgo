@@ -5,11 +5,11 @@ import os
 from dataclasses import dataclass
 from typing import Dict, Optional, Union
 
-# Path to the colors.csv file
+# Path to the RB_colors.csv file
 COLORS_CSV_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "RebrickableCSVs",
-    "colors.csv"
+    "LegoData",
+    "RB_colors.csv"
 )
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ class RbColours:
     Dynamic enumeration of Rebrickable colours loaded from CSV.
     
     This class acts as a singleton registry for color data sourced from the 
-    Rebrickable database export (colors.csv). It provides a factory-like 
+    Rebrickable database export (RB_colors.csv). It provides a factory-like 
     interface to retrieve color objects using either their unique integer ID 
     or their string name.
     
@@ -40,7 +40,7 @@ class RbColours:
     @classmethod
     def _initialize(cls):
         """
-        Load data from the Rebrickable colors.csv file if not already loaded.
+        Load data from the Rebrickable RB_colors.csv file if not already loaded.
         
         This method parses the CSV file and populates the internal dictionaries
         for ID and Name lookups. It enforces strict parsing and will raise
@@ -77,7 +77,7 @@ class RbColours:
                     cls._by_name[c_name.lower()] = color
                 except (ValueError, KeyError) as e:
                     # Fatal error on malformed rows
-                    raise ValueError(f"Error parsing colors.csv at line {line_num}: {e}") from e
+                    raise ValueError(f"Error parsing RB_colors.csv at line {line_num}: {e}") from e
         
         cls._initialized = True
 

@@ -64,11 +64,15 @@ class Layer:
         for bucket in self.buckets.values():
             bucket.reset_quantities()
 
-    def to_dict(self):
+    def to_dict(self, state_only: bool = False):
         """Convert layer state to a serializable dictionary."""
-        return {
-            str(pos): bucket.to_dict() for pos, bucket in self.buckets.items()
-        }
+        # Filter out empty buckets if state_only is True to keep it concise
+        buckets_data = {}
+        for pos, bucket in self.buckets.items():
+            if state_only and not bucket.config.criteria and not bucket.config.available_for_extension:
+                continue
+            buckets_data[str(pos)] = bucket.to_dict(state_only=state_only)
+        return buckets_data
 
 
 class LayerCake:
@@ -116,8 +120,21 @@ class LayerCake:
         This includes the configuration and current state (quantities, enabled status)
         of every bucket in every layer.
         """
-        data = [layer.to_dict() for layer in self.layer_cake]
-        return json.dumps(data, indent=2)
+        return json.dumps(self.to_dict(), indent=2)
+
+    def summarize_state(self) -> str:
+        """
+        Summarize only the current state and names of active buckets as a JSON string.
+        
+        This is more concise than summarize() as it omits the full criteria configuration.
+        """
+        return json.dumps(self.to_dict(state_only=True), indent=2)
+
+    def to_dict(self, state_only: bool = False) -> List[dict]:
+        """
+        Convert the entire LayerCake state to a list of dictionaries.
+        """
+        return [layer.to_dict(state_only=state_only) for layer in self.layer_cake]
 
     def find_best_bucket(self, part_num: str, color_id: Optional[int] = None) -> Tuple[Optional[int], Optional[int], SortingStatus]:
         """

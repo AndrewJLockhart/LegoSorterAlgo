@@ -6,6 +6,7 @@ import pyparsing as pp
 
 from ..rb_parts import RbPart
 from ..rb_colour import RbColours, RbColour
+from ..rb_values import RbPartValues
 
 
 class CriteriaEvaluator:
@@ -53,22 +54,27 @@ class CriteriaEvaluator:
         RB_COL = pp.CaselessKeyword("RB_COL")
         RB_PT = pp.CaselessKeyword("RB_PT")
         RB_PT_CAT = pp.CaselessKeyword("RB_PT_CAT")
+        PT_VAL = pp.CaselessKeyword("PT_VAL")
 
-        KEY = RB_COL | RB_PT | RB_PT_CAT
+        KEY = RB_COL | RB_PT | RB_PT_CAT | PT_VAL
 
         # Define operators
         EQ = pp.Literal("=")
         NEQ = pp.Literal("!=")
-        OPERATOR = EQ | NEQ
+        GT = pp.Literal(">")
+        LT = pp.Literal("<")
+        GTE = pp.Literal(">=")
+        LTE = pp.Literal("<=")
+        OPERATOR = GTE | LTE | EQ | NEQ | GT | LT
 
         # Define values
         # A value is a sequence of words that are not reserved keywords
         # We exclude AND/OR to ensure they are treated as operators
         reserved = AND | OR
         
-        # Allowed characters in a word: alphanumeric, comma, underscore, hyphen
+        # Allowed characters in a word: alphanumeric, comma, underscore, hyphen, dot
         # We explicitly exclude the parentheses from the word characters to avoid consuming them
-        word_chars = pp.alphanums + ",_-"
+        word_chars = pp.alphanums + ",_.-"
         
         # A word cannot be a reserved keyword
         valid_word = ~reserved + pp.Word(word_chars)
@@ -142,9 +148,8 @@ class CriteriaEvaluator:
 
     def _count_constraints(self, node) -> int:
         if isinstance(node, dict):
-            val = node.get("value")
-            if isinstance(val, list):
-                return len(val)
+            # Each comparison (key op value) counts as 1 constraint, 
+            # regardless of how many values are in a pipe (|).
             return 1
         
         if hasattr(node, "asList"):
@@ -189,7 +194,43 @@ class CriteriaEvaluator:
     def _check_condition(self, key, op, values, rb_part, rb_col):
         key_upper = key.upper()
         
-        # Evaluate each value in the list
+        if key_upper == "PT_VAL":
+            # Numeric comparison for part value
+            if rb_part is None or rb_col is None:
+                return False
+            
+            # Resolve color ID
+            color_id = rb_col.id if isinstance(rb_col, RbColour) else rb_col
+            if not isinstance(color_id, int):
+                return False
+                
+            actual_value = RbPartValues.get_value(rb_part.part_num, color_id)
+            
+            results = []
+            for val_str in values:
+                try:
+                    target_val = float(val_str)
+                    if op == "=": results.append(actual_value == target_val)
+                    elif op == "!=": results.append(actual_value != target_val)
+                    elif op == ">": results.append(actual_value > target_val)
+                    elif op == "<": results.append(actual_value < target_val)
+                    elif op == ">=": results.append(actual_value >= target_val)
+                    elif op == "<=": results.append(actual_value <= target_val)
+                except ValueError:
+                    results.append(False)
+            
+            # If op is "=", we return True if ANY value matches.
+            # If op is "!=", we return True if NONE of the values match.
+            if op == "=":
+                return any(results)
+            elif op == "!=":
+                return not any(results)
+            
+            # For other operators (>, <, etc.), we return True if ANY match.
+            # (Usually these operators won't be used with multiple values via | anyway)
+            return any(results)
+
+        # String/ID comparisons for other keys
         results = []
         for value_str in values:
             match = False

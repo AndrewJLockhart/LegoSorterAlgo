@@ -74,10 +74,38 @@ If a bucket has `allow_extension: true` and all its criteria have reached their 
 ## Criteria DSL
 
 The `CriteriaEvaluator` supports a rich expression language:
-*   **Keys**: `RB_COL` (Color name or ID), `RB_PT` (Part number), `RB_PT_CAT` (Part Category name or ID).
-*   **Operators**: `=`, `!=`.
+*   **Keys**: 
+    *   `RB_COL`: Color name or ID (e.g., `RB_COL = Red`, `RB_COL = 4`).
+    *   `RB_PT`: Part number (e.g., `RB_PT = 3001`).
+    *   `RB_PT_CAT`: Part Category name or ID (e.g., `RB_PT_CAT = Bricks`, `RB_PT_CAT = 11`).
+    *   `PT_VAL`: Part value in dollars (e.g., `PT_VAL > 1.05`).
+*   **Operators**: `=`, `!=`, `>`, `<`, `>=`, `<=`.
 *   **Logic**: `AND`, `OR`, and the `|` shorthand for multiple values (e.g., `RB_COL = Red | Blue | Green`).
 *   **Grouping**: Use parentheses `()` to define precedence.
+
+## Data Setup
+
+The algorithm relies on Rebrickable data stored in the `LegoData` folder.
+
+### Rebrickable CSVs
+Ensure the following files are present in `LegoData/`:
+- `RB_colors.csv`
+- `RB_elements.csv`
+- `RB_parts.csv`
+- `RB_part_categories.csv`
+- ... (and other Rebrickable CSVs)
+
+You can download these using the provided script:
+```bash
+python scripts/download_rebrickable_data.py
+```
+
+### Generating Part Values
+To use the `PT_VAL` criteria, you need a `RB_partvalues.csv` file. You can generate a sample file with 100 random entries using:
+```bash
+python scripts/generate_part_values.py
+```
+This script creates a deterministic set of values for common parts and colors for testing purposes.
 
 ## Structure
 
@@ -136,6 +164,40 @@ Optionally, install the package in development mode:
 pip install -e .
 ```
 
+## Data Setup
+
+The algorithm relies on metadata from the Rebrickable database to resolve part numbers, colors, and categories.
+
+### Downloading Rebrickable Data
+Before running the algorithm, you must populate the `LegoData` directory with the latest CSV exports from Rebrickable. A script is provided to automate this:
+
+```bash
+python scripts/download_rebrickable_data.py
+```
+
+**What it does:**
+- Connects to the Rebrickable CDN.
+- Downloads compressed (`.csv.gz`) files for parts, colors, categories, and relationships.
+- Decompresses them into the `LegoData` folder.
+
+**Why it's needed:**
+- **REQ-1 (Matching)**: The `CriteriaEvaluator` needs this data to know that part `3001` is a "Brick 2x4" and belongs to the "Bricks" category.
+- **Offline Support**: By storing the data locally in `LegoData`, the algorithm can perform high-speed lookups without needing an active internet connection during sorting.
+
+### Generating Part Values (Temporary)
+A secondary script is used to generate sample market value data for parts:
+
+```bash
+python scripts/generate_part_values.py
+```
+
+**Current Status:**
+- This script currently generates a **temporary** `RB_partvalues.csv` file with 100 hardcoded entries for common bricks and plates.
+- It is used to simulate the presence of pricing data for the sorting algorithm.
+
+**Future Plans:**
+- This script will be updated to fetch real-time market data from the **BrickLink API** based on specific input parameters.
+
 ## Usage
 
 ```python
@@ -172,10 +234,48 @@ cake = LayerCake.from_json("config.json")
 
 #### Criteria Expressions
 The `expression` string supports boolean logic and field comparisons:
-- **Fields:** `RB_COL` (Color), `RB_PT` (Part Number), `RB_PT_CAT` (Part Category).
-- **Operators:** `=` (equals), `!=` (not equals).
+- **Fields:** 
+    - `RB_COL`: Color name or ID (e.g., `RB_COL = Red`, `RB_COL = 4`).
+    - `RB_PT`: Part number (e.g., `RB_PT = 3001`).
+    - `RB_PT_CAT`: Part Category name or ID (e.g., `RB_PT_CAT = Bricks`, `RB_PT_CAT = 11`).
+    - `PT_VAL`: Part market value in dollars (e.g., `PT_VAL > 1.05`).
+- **Operators:** 
+    - Equality: `=`, `!=`.
+    - Numeric: `>`, `<`, `>=`, `<=`.
 - **Logic:** `AND`, `OR`, and parentheses `()` for grouping.
 - **Shorthand (Pipe):** Use `|` to match multiple values in one field (e.g., `RB_COL = Red | Blue`).
+
+#### Value-Based Sorting Examples
+The `PT_VAL` field allows you to sort pieces based on their market value (loaded from `LegoData/RB_partvalues.csv`). If a piece is not found in the value database, it defaults to `0.0`.
+
+- **High Value Sorting:** `PT_VAL > 2.00` (Collects pieces worth more than $2.00)
+- **Bulk/Cheap Sorting:** `PT_VAL < 0.10` (Collects pieces worth less than 10 cents)
+- **Value Range:** `PT_VAL >= 0.50 AND PT_VAL <= 1.50` (Collects mid-range pieces)
+- **Specific High-Value Parts:** `RB_PT = 3001 AND PT_VAL > 1.00` (Collects 2x4 bricks only if they are valuable)
+
+### Building Lego Sets (Inventory Sorting)
+
+The multi-criteria system allows you to use a single bucket to collect all the parts needed for a specific Lego set or MOC (My Own Creation). By defining multiple criteria with specific `required` quantities, the bucket acts as an automated kit-builder.
+
+**Example: Building a Small Kit**
+If you want to collect the parts for a small set that requires:
+- 5x Red 2x4 Bricks (Part 3001, Color 4)
+- 2x Blue 2x2 Plates (Part 3022, Color 1)
+
+You can define a bucket like this in your configuration:
+```json
+{
+  "1": [
+    { "expression": "RB_PT = 3001 AND RB_COL = 4", "required": 5 },
+    { "expression": "RB_PT = 3022 AND RB_COL = 1", "required": 2 },
+  ]
+}
+```
+
+**How it works:**
+1.  **Parallel Collection:** The bucket will accept any of these four parts/categories simultaneously.
+2.  **Individual Limits:** Once it has 5 Red Bricks, it will stop accepting them for this bucket (allowing them to fall back to a general "Red" or "Bricks" bucket elsewhere).
+3.  **Completion:** The bucket is only marked as "Full" (and eligible for automatic extension/spillover) once **every single criteria** in the list has reached its `required` quantity. This allows you to ensure a bucket contains a complete set of parts before the machine moves on to a new placeholder.
 
 #### Detailed Example (`config.json`)
 ```json
@@ -244,6 +344,17 @@ cake.reset_layer_quantities(1)             # Reset Layer 1
 cake.reset_bucket_quantities(1, 5)         # Reset Bucket 5 in Layer 1
 ```
 
+### Summarizing State
+You can retrieve the current state of the entire machine (including configurations, quantities, and enabled status) as a JSON string. There are two levels of detail available:
+
+```python
+# Get full state including all criteria configurations
+full_summary = cake.summarize()
+
+# Get concise state (only bucket names, quantities, and status)
+state_summary = cake.summarize_state()
+```
+
 ## Running Tests
 
 Run the test suite:
@@ -255,5 +366,5 @@ python -m unittest tests.test_lego_sorter -v
 
 Run the example demonstration:
 ```bash
-python example.py
+python main.py
 ```

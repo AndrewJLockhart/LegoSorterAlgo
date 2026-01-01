@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import MagicMock, patch
-from lego_sorter.LayerCake.criteria_evaluator import CriteriaEvaluator
+from lego_sorter.LayerCake.criteria_evaluator import CriteriaEvaluator, RbPartValues
 from lego_sorter.rb_parts import RbPart, RbPartCategory
 from lego_sorter.rb_colour import RbColour, RbColours
 
@@ -50,6 +50,24 @@ class TestCriteriaEvaluator(unittest.TestCase):
         evaluator = CriteriaEvaluator("RB_COL = Red")
         result = evaluator.evaluate(rb_col=self.mock_color)
         self.assertFalse(result)
+
+    def test_part_value_comparison(self):
+        # Mock the value lookup
+        with patch.object(RbPartValues, 'get_value', return_value=1.50):
+            # Test greater than
+            evaluator = CriteriaEvaluator("PT_VAL > 1.05")
+            result = evaluator.evaluate(rb_part=self.mock_part, rb_col=self.mock_color)
+            self.assertTrue(result)
+            
+            # Test less than
+            evaluator = CriteriaEvaluator("PT_VAL < 1.00")
+            result = evaluator.evaluate(rb_part=self.mock_part, rb_col=self.mock_color)
+            self.assertFalse(result)
+            
+            # Test equal
+            evaluator = CriteriaEvaluator("PT_VAL = 1.50")
+            result = evaluator.evaluate(rb_part=self.mock_part, rb_col=self.mock_color)
+            self.assertTrue(result)
 
 if __name__ == '__main__':
     unittest.main()

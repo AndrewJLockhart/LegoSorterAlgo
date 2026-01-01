@@ -49,26 +49,22 @@ def main():
     layer2.set_bucket(3, config3)
     print(f"  Added Bucket at position 3 with criteria: {config3.criteria}")
     
+    # Bucket 10: High value pieces
+    config4 = BucketConfig(
+        criteria=(
+            BucketCriteria(CriteriaEvaluator("PT_VAL > 1.00"), required_quantity=5),
+        )
+    )
+    layer2.set_bucket(10, config4)
+    print(f"  Added Bucket at position 10 with criteria: {config4.criteria}")
+    
     cake.add_layer(layer2)
     
-    # Display the machine structure
+    # Display the machine structure using the summarize_state method
     print(f"\n{'='*60}")
-    print("Layer Cake State:")
+    print("Initial Layer Cake State (JSON):")
     print(f"{'='*60}")
-    print(f"Total layers: {cake.layer_count()}")
-    
-    for i in range(cake.layer_count()):
-        layer = cake.get_layer(i)
-        print(f"\nLayer {i + 1}:")
-        for position in sorted(layer.buckets.keys()):
-            bucket = layer.get_bucket(position)
-            if not bucket.config.criteria:
-                continue
-            print(f"  Position {position}:")
-            for idx, criteria in enumerate(bucket.config.criteria):
-                current = bucket.current_quantities[idx]
-                req_str = f" (Required: {criteria.required_quantity})" if criteria.required_quantity is not None else ""
-                print(f"    - {criteria.evaluator.expression}{req_str} [Current: {current}]")
+    print(cake.summarize_state())
     
     print(f"\n{'='*60}")
     print("Sorting Demonstration:")
@@ -80,6 +76,7 @@ def main():
         ("3020", 1),  # Blue 2x4 Plate -> Matches Bucket 5 (RB_COL=Blue)
         ("3020", 2),  # Green 2x4 Plate -> Matches Layer 2, Bucket 3 (RB_COL=Green) - Tie-break to higher layer
         ("9999", 2),  # Green Piece -> Matches Layer 2, Bucket 3 (RB_COL=Green)
+        ("3001", 1),  # Blue 2x4 Brick -> Might match PT_VAL > 1.00 if in RB_partvalues.csv
         ("1234", 0),  # Black Piece -> No match
     ]
     
@@ -92,6 +89,11 @@ def main():
             print(f", Layer: {l_num}, Bucket: {b_id}")
         else:
             print()
+
+    print(f"\n{'='*60}")
+    print("Final Layer Cake State (JSON):")
+    print(f"{'='*60}")
+    print(cake.summarize_state())
 
     print(f"\n{'='*60}\n")
 

@@ -494,7 +494,7 @@ class TestIntegration(unittest.TestCase):
         
         cake.add_layer(layer)
         
-        # Red is ID 4 in colors.csv
+        # Red is ID 4 in RB_colors.csv
         # Initially, bucket 1 should be chosen (higher specificity)
         l_num, b_id, status = cake.find_best_bucket("3001", 4)
         self.assertEqual(b_id, 1)

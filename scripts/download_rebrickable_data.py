@@ -27,7 +27,7 @@ FILES = [
 ]
 
 BASE_URL = "https://cdn.rebrickable.com/media/downloads/"
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "RebrickableCSVs")
+OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "LegoData")
 
 class ImageLibrary:
     def __init__(self):
@@ -51,7 +51,7 @@ class ImageLibrary:
         return str(self.image_map[clean_url])
 
     def save(self):
-        path = os.path.join(OUTPUT_DIR, "image_paths.csv.gz")
+        path = os.path.join(OUTPUT_DIR, "RB_image_paths.csv.gz")
         print(f"Writing {len(self.images)} image paths to {path}...")
         with gzip.open(path, 'wt', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
@@ -107,14 +107,16 @@ def process_file_with_images(filename, response, img_lib):
 
 def download_file(filename, img_lib=None):
     url = f"{BASE_URL}{filename}.gz"
-    output_path = os.path.join(OUTPUT_DIR, filename)
+    # Prefix the local filename with RB_
+    local_filename = f"RB_{filename}"
+    output_path = os.path.join(OUTPUT_DIR, local_filename)
     
     print(f"Downloading {filename} from {url}...")
     
     try:
         with urllib.request.urlopen(url) as response:
             if filename in ["inventory_parts.csv", "sets.csv", "minifigs.csv"] and img_lib is not None:
-                return process_file_with_images(filename, response, img_lib)
+                return process_file_with_images(local_filename, response, img_lib)
             
             # Stream decompression directly to file
             with gzip.GzipFile(fileobj=response, mode='rb') as gz_file:

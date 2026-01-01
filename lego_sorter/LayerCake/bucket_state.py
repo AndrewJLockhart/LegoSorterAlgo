@@ -75,8 +75,16 @@ class Bucket:
         
         return True
 
-    def to_dict(self):
+    def to_dict(self, state_only: bool = False):
         """Convert bucket state to a serializable dictionary."""
+        if state_only:
+            # Only return the name and the current state (quantities, enabled, etc.)
+            return {
+                "name": self.config.name,
+                "current_quantities": self.current_quantities,
+                "enabled": self.enabled,
+                "is_complete": self.is_complete
+            }
         return {
             "config": self.config.to_dict(),
             "current_quantities": self.current_quantities,

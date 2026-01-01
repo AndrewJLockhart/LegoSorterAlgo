@@ -13,8 +13,8 @@ from typing import Dict, List
 
 # Paths to the CSV files - used to load the source of truth for part and category data.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PARTS_CSV_PATH = os.path.join(BASE_DIR, "RebrickableCSVs", "parts.csv")
-CATEGORIES_CSV_PATH = os.path.join(BASE_DIR, "RebrickableCSVs", "part_categories.csv")
+PARTS_CSV_PATH = os.path.join(BASE_DIR, "LegoData", "RB_parts.csv")
+CATEGORIES_CSV_PATH = os.path.join(BASE_DIR, "LegoData", "RB_part_categories.csv")
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ class RbParts:
     Registry for Rebrickable parts and categories loaded from CSVs.
     
     This class acts as a singleton registry for part and category data sourced 
-    from the Rebrickable database export (parts.csv and part_categories.csv). 
+    from the Rebrickable database export (RB_parts.csv and RB_part_categories.csv). 
     It provides a factory-like interface to retrieve part objects using their 
     unique part number.
     
@@ -73,7 +73,7 @@ class RbParts:
     @classmethod
     def _initialize(cls):
         """
-        Load data from part_categories.csv and parts.csv if not already loaded.
+        Load data from RB_part_categories.csv and RB_parts.csv if not already loaded.
         
         This method ensures data integrity by validating the CSV structure 
         and types during initialization. It enforces strict parsing and will 
@@ -98,7 +98,7 @@ class RbParts:
                         
                     cls._categories_by_id[cat_id] = RbPartCategory(cat_id, cat_name)
                 except (ValueError, KeyError) as e:
-                    raise ValueError(f"Error parsing part_categories.csv at line {line_num}: {e}") from e
+                    raise ValueError(f"Error parsing RB_part_categories.csv at line {line_num}: {e}") from e
 
         # 2. Load Parts
         if not os.path.exists(PARTS_CSV_PATH):
@@ -114,7 +114,7 @@ class RbParts:
 
                     # Resolve category
                     if cat_id not in cls._categories_by_id:
-                        # It's possible parts.csv references a category not in part_categories.csv 
+                        # It's possible RB_parts.csv references a category not in RB_part_categories.csv 
                         # if the files are out of sync, but we'll treat it as a fatal error for strictness.
                         raise ValueError(f"Unknown category ID {cat_id} for part {part_num}")
                     
@@ -130,7 +130,7 @@ class RbParts:
                     
                 except (ValueError, KeyError) as e:
                     # Fatal error on malformed rows to prevent incorrect sorting.
-                    raise ValueError(f"Error parsing parts.csv at line {line_num}: {e}") from e
+                    raise ValueError(f"Error parsing RB_parts.csv at line {line_num}: {e}") from e
 
         cls._initialized = True
 
