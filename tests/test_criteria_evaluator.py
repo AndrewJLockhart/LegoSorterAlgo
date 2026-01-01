@@ -36,6 +36,11 @@ class TestCriteriaEvaluator(unittest.TestCase):
         result = evaluator.evaluate(rb_part=self.mock_part)
         self.assertTrue(result)
 
+    def test_part_category_id_match(self):
+        evaluator = CriteriaEvaluator("RB_PT_CAT = 11")
+        result = evaluator.evaluate(rb_part=self.mock_part)
+        self.assertTrue(result)
+
     def test_complex_expression(self):
         evaluator = CriteriaEvaluator("RB_COL = Blue AND RB_PT = 3001")
         result = evaluator.evaluate(rb_part=self.mock_part, rb_col=self.mock_color)

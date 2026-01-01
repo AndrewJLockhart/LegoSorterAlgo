@@ -74,7 +74,7 @@ If a bucket has `allow_extension: true` and all its criteria have reached their 
 ## Criteria DSL
 
 The `CriteriaEvaluator` supports a rich expression language:
-*   **Keys**: `RB_COL` (Color name or ID), `RB_PT` (Part number).
+*   **Keys**: `RB_COL` (Color name or ID), `RB_PT` (Part number), `RB_PT_CAT` (Part Category name or ID).
 *   **Operators**: `=`, `!=`.
 *   **Logic**: `AND`, `OR`, and the `|` shorthand for multiple values (e.g., `RB_COL = Red | Blue | Green`).
 *   **Grouping**: Use parentheses `()` to define precedence.

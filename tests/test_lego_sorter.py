@@ -612,6 +612,45 @@ class TestIntegration(unittest.TestCase):
         _, _, status = cake.find_best_bucket("3001", 4) # Red
         self.assertEqual(status, SortingStatus.DISABLED_REJECTED)
 
+    def test_bucket_name_and_summarize(self):
+        """Test that bucket names are parsed and the machine state can be summarized."""
+        json_content = [
+            {
+                "1": {
+                    "name": "Red Bricks",
+                    "criteria": ["RB_COL = Red"]
+                },
+                "16": {
+                    "name": "Overflow",
+                    "available_for_extension": True
+                }
+            }
+        ]
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as tmp:
+            json.dump(json_content, tmp)
+            tmp_path = tmp.name
+            
+        try:
+            cake = LayerCake.from_json(tmp_path)
+            
+            # Verify names
+            self.assertEqual(cake.get_layer(0).get_bucket(1).config.name, "Red Bricks")
+            self.assertEqual(cake.get_layer(0).get_bucket(16).config.name, "Overflow")
+            
+            # Verify summarize
+            summary_json = cake.summarize()
+            summary = json.loads(summary_json)
+            
+            self.assertEqual(len(summary), 1) # 1 layer
+            self.assertEqual(summary[0]["1"]["config"]["name"], "Red Bricks")
+            self.assertEqual(summary[0]["16"]["config"]["name"], "Overflow")
+            self.assertEqual(summary[0]["1"]["current_quantities"], [0])
+            self.assertTrue(summary[0]["1"]["enabled"])
+            
+        finally:
+            os.remove(tmp_path)
+
     def test_from_json_duplicate_buckets(self):
         json_content = [
             {

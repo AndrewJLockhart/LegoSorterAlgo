@@ -1,12 +1,8 @@
 """Bucket configuration and state classes."""
 
-import logging
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 from .criteria_evaluator import CriteriaEvaluator
-
-# Initialize logger for this module
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -14,13 +10,20 @@ class BucketCriteria:
     """
     A single criteria within a bucket configuration.
     
-    Encapsulates the matching logic (evaluator) and the capacity limit (required_quantity).
+    Encapsulates the matching logic (evaluator) and the required_quantity.
     """
     evaluator: CriteriaEvaluator
     required_quantity: Optional[int] = None
 
     def __repr__(self):
         return f"BucketCriteria(expression='{self.evaluator.expression}', required={self.required_quantity})"
+
+    def to_dict(self):
+        """Convert criteria to a serializable dictionary."""
+        return {
+            "expression": self.evaluator.expression,
+            "required": self.required_quantity
+        }
 
 
 @dataclass(frozen=True)
@@ -33,9 +36,10 @@ class BucketConfig:
     modified, which is critical for maintaining consistency across layers.
     """
     criteria: Tuple[BucketCriteria, ...] = field(default_factory=tuple)
-    available_for_extension: bool = False
-    allow_extension: Optional[bool] = None
-    allow_fallback_if_disabled: bool = True
+    name: Optional[str] = None
+    available_for_extension: bool = False   #When this is true, the bucket can serve as a source for extension. It must not have criteria.
+    allow_extension: Optional[bool] = None  #When this is true, once the bucket is full, we will look
+    allow_fallback_if_disabled: bool = True  #If the bucket is disabled, allow fallback to other buckets. 
 
     def __post_init__(self):
         """
@@ -52,11 +56,9 @@ class BucketConfig:
 
         # Validation logic to prevent impossible states:
         if self.available_for_extension and self.allow_extension:
-            # A bucket cannot be both a source and a destination for extension simultaneously.
-            raise ValueError("available_for_extension and allow_extension are mutually exclusive.")
+            raise ValueError("A bucket cannot be both a source and a destination for extension simultaneously.")
         
         if self.available_for_extension and self.criteria:
-            # Placeholders must be empty to receive new rules.
             raise ValueError("BucketConfig cannot have criteria if available_for_extension is set.")
             
         if self.allow_extension and not self.criteria:
@@ -69,7 +71,6 @@ class BucketConfig:
         if self.criteria:
             has_required = [c.required_quantity is not None for c in self.criteria]
             if any(has_required) and not all(has_required):
-                logger.error(f"Inconsistent required_quantities in config: {self.criteria}")
                 raise ValueError("All criteria must have a required_quantity, or none of them should.")
 
     def evaluate(self, rb_part, rb_col, current_quantities: List[int]) -> Tuple[int, int]:
@@ -99,6 +100,16 @@ class BucketConfig:
                     best_idx = i
         
         return best_score, best_idx
+
+    def to_dict(self):
+        """Convert configuration to a serializable dictionary."""
+        return {
+            "name": self.name,
+            "criteria": [c.to_dict() for c in self.criteria],
+            "available_for_extension": self.available_for_extension,
+            "allow_extension": self.allow_extension,
+            "allow_fallback_if_disabled": self.allow_fallback_if_disabled
+        }
         """
         Evaluate a part and color against all criteria in this bucket.
         

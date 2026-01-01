@@ -1,17 +1,13 @@
 """Layer class for representing a layer of buckets."""
 
 import json
-import logging
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 from .bucket_config import BucketConfig, BucketCriteria
 from .bucket_state import Bucket
 from .criteria_evaluator import CriteriaEvaluator
 from ..rb_parts import RbParts
 from ..rb_colour import RbColours
-
-# Initialize logger for this module
-logger = logging.getLogger(__name__)
 
 
 class SortingStatus(Enum):
@@ -46,10 +42,8 @@ class Layer:
             config: BucketConfig object
         """
         if not 1 <= position <= 16:
-            logger.error(f"Invalid bucket position: {position}")
             raise ValueError("Bucket position must be between 1 and 16")
         self.buckets[position] = Bucket(config)
-        logger.debug(f"Set bucket at position {position} with config: {config}")
     
     def get_bucket(self, position: int) -> Bucket:
         """Get a bucket state at a specific position."""
@@ -70,6 +64,12 @@ class Layer:
         for bucket in self.buckets.values():
             bucket.reset_quantities()
 
+    def to_dict(self):
+        """Convert layer state to a serializable dictionary."""
+        return {
+            str(pos): bucket.to_dict() for pos, bucket in self.buckets.items()
+        }
+
 
 class LayerCake:
     """
@@ -87,7 +87,6 @@ class LayerCake:
     def add_layer(self, layer: Layer):
         """Add a layer to the layer cake."""
         self.layer_cake.append(layer)
-        logger.info(f"Added layer {len(self.layer_cake)} to the machine.")
     
     def get_layer(self, index: int) -> Layer:
         """Get a layer at a specific index (0-based)."""
@@ -101,7 +100,6 @@ class LayerCake:
         """Reset all current quantities in the entire layer cake to 0."""
         for layer in self.layer_cake:
             layer.reset_quantities()
-        logger.info("Reset quantities for all buckets in the machine.")
     
     def reset_layer_quantities(self, layer_num: int):
         """Reset current quantities for all buckets in a specific layer (1-based)."""
@@ -111,6 +109,16 @@ class LayerCake:
         """Reset current quantities for a specific bucket in a specific layer."""
         self.get_layer(layer_num - 1).get_bucket(bucket_id).reset_quantities()
     
+    def summarize(self) -> str:
+        """
+        Summarize the entire state of the LayerCake as a JSON string.
+        
+        This includes the configuration and current state (quantities, enabled status)
+        of every bucket in every layer.
+        """
+        data = [layer.to_dict() for layer in self.layer_cake]
+        return json.dumps(data, indent=2)
+
     def find_best_bucket(self, part_num: str, color_id: Optional[int] = None) -> Tuple[Optional[int], Optional[int], SortingStatus]:
         """
         Find the most appropriate bucket for a given part and color.
@@ -126,7 +134,6 @@ class LayerCake:
             A tuple of (layer_num, bucket_id, status).
             Layer number is 1-based, bucket ID is 1-16.
         """
-        logger.debug(f"Finding best bucket for part={part_num}, color={color_id}")
 
         # Resolve part and color metadata
         try:
@@ -166,7 +173,6 @@ class LayerCake:
                         abs_best_bucket_id = b_id
 
         if abs_best_layer_idx is None:
-            logger.info(f"No matching bucket found for part={part_num}, color={color_id}")
             return None, None, SortingStatus.NO_MATCH
 
         # STEP 2: Handle the 'Enabled' state of the best match.
@@ -174,11 +180,9 @@ class LayerCake:
         if not best_bucket.enabled:
             # If the best match is disabled, we check if fallback is allowed.
             if not best_bucket.config.allow_fallback_if_disabled:
-                logger.info(f"Best match (L{abs_best_layer_idx+1}, B{abs_best_bucket_id}) is disabled and fallback is forbidden.")
                 return None, None, SortingStatus.DISABLED_REJECTED
             
             # Fallback logic: Find the best match among ENABLED buckets only.
-            logger.debug(f"Best match is disabled; searching for fallback among enabled buckets.")
             best_layer_idx = None
             best_bucket_id = None
             best_criteria_idx = None
@@ -203,7 +207,6 @@ class LayerCake:
                             best_criteria_idx = criteria_idx
             
             if best_layer_idx is None:
-                logger.info("No enabled fallback bucket found.")
                 return None, None, SortingStatus.NO_MATCH
         else:
             # The absolute best match is enabled, so we use it.
@@ -218,7 +221,6 @@ class LayerCake:
             
             # Check if the bucket is now full and needs to 'spill over' to a placeholder.
             if best_bucket_state.is_complete:
-                logger.info(f"Bucket (L{best_layer_idx+1}, B{best_bucket_id}) is full. Triggering extension.")
                 self._handle_bucket_extension(best_bucket_state)
                 
             return best_layer_idx + 1, best_bucket_id, SortingStatus.MATCH
@@ -238,7 +240,6 @@ class LayerCake:
                 if target_bucket.config.available_for_extension:
                     # Found a placeholder!
                     # We copy the immutable config to the new bucket and reset its state.
-                    logger.info(f"Extending full bucket to placeholder at Layer {l_idx+1}, Bucket {b_id}")
                     target_bucket.config = completed_bucket.config
                     target_bucket.reset_quantities()
                     target_bucket.enabled = True
@@ -252,7 +253,6 @@ class LayerCake:
         This factory method handles the complex parsing of the configuration DSL, 
         supporting both shorthand lists and detailed object notation.
         """
-        logger.info(f"Loading LayerCake configuration from {file_path}")
         with open(file_path, 'r') as f:
             data = json.load(f)
             
@@ -267,7 +267,6 @@ class LayerCake:
                 try:
                     positions = [int(p.strip()) for p in pos_str.split(',')]
                 except ValueError:
-                    logger.warning(f"Skipping invalid bucket position key in JSON: '{pos_str}'")
                     continue
 
                 for position in positions:
@@ -278,6 +277,7 @@ class LayerCake:
                     criteria_list = []
                     available_for_ext = False
                     allow_ext = False
+                    name = None
 
                     if isinstance(criteria_list_data, list):
                         # Shorthand notation: just a list of criteria strings or objects.
@@ -293,6 +293,7 @@ class LayerCake:
                         allow_ext = None
                     elif isinstance(criteria_list_data, dict):
                         # Detailed object notation: allows for directives like 'available_for_extension'.
+                        name = criteria_list_data.get("name")
                         available_for_ext = criteria_list_data.get("available_for_extension", False)
                         allow_ext = criteria_list_data.get("allow_extension")
                         allow_fallback = criteria_list_data.get("allow_fallback_if_disabled", True)
@@ -309,6 +310,7 @@ class LayerCake:
                             criteria_list.append(BucketCriteria(evaluator, required))
                     
                     config = BucketConfig(
+                        name=name,
                         criteria=tuple(criteria_list),
                         available_for_extension=available_for_ext,
                         allow_extension=allow_ext,

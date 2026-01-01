@@ -64,7 +64,10 @@ class RbColours:
                     # We convert this to a boolean.
                     is_trans_str = row['is_trans'].lower()
                     if is_trans_str not in ('true', 'false'):
-                         raise ValueError(f"Invalid boolean value for 'is_trans': {row['is_trans']}")
+                        raise ValueError(
+                            f"Invalid boolean value for 'is_trans': '{row['is_trans']}'. "
+                            f"Expected 'true' or 'false' (case-insensitive), but got '{is_trans_str}'"
+                        )
                     c_is_trans = is_trans_str == 'true'
                     
                     color = RbColour(c_id, c_name, c_is_trans)

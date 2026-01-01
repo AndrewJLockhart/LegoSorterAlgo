@@ -1,12 +1,17 @@
-"""Rebrickable part and category enumeration utilities."""
+"""
+Rebrickable part and category enumeration utilities.
+
+This module provides the data structures and lookup mechanisms for Rebrickable 
+part and category metadata, which is essential for REQ-1 (Match Pieces to Buckets).
+"""
 
 import csv
 import os
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List
 
-# Paths to the CSV files
+# Paths to the CSV files - used to load the source of truth for part and category data.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PARTS_CSV_PATH = os.path.join(BASE_DIR, "RebrickableCSVs", "parts.csv")
 CATEGORIES_CSV_PATH = os.path.join(BASE_DIR, "RebrickableCSVs", "part_categories.csv")
@@ -14,7 +19,13 @@ CATEGORIES_CSV_PATH = os.path.join(BASE_DIR, "RebrickableCSVs", "part_categories
 
 @dataclass(frozen=True)
 class RbPartCategory:
-    """Immutable metadata for a Rebrickable part category."""
+    """
+    Immutable metadata for a Rebrickable part category.
+    
+    This class encapsulates the properties of a category (ID, Name) required 
+    by the CriteriaEvaluator to perform specificity-based matching (REQ-1) 
+    when using the RB_PT_CAT keyword.
+    """
     id: int
     name: str
 
@@ -24,7 +35,13 @@ class RbPartCategory:
 
 @dataclass(frozen=True)
 class RbPart:
-    """Immutable metadata for a Rebrickable part."""
+    """
+    Immutable metadata for a Rebrickable part.
+    
+    This class encapsulates the properties of a part (Part Number, Name, Category)
+    required by the CriteriaEvaluator to perform specificity-based matching (REQ-1).
+    It links a part to its category, enabling hierarchical matching rules.
+    """
     part_num: str
     name: str
     category: RbPartCategory
@@ -37,8 +54,16 @@ class RbParts:
     """
     Registry for Rebrickable parts and categories loaded from CSVs.
     
-    Provides lookup for parts by part_num and retrieval of parts by category.
-    Data is lazy-loaded on first access.
+    This class acts as a singleton registry for part and category data sourced 
+    from the Rebrickable database export (parts.csv and part_categories.csv). 
+    It provides a factory-like interface to retrieve part objects using their 
+    unique part number.
+    
+    Why we need this:
+    - REQ-1: To resolve part numbers (e.g., '3001') into rich objects that 
+      the CriteriaEvaluator can use for matching against part numbers and 
+      categories.
+    - Performance: Lazy-loading ensures the CSVs are only parsed when needed.
     """
     _parts_by_num: Dict[str, RbPart] = {}
     _categories_by_id: Dict[int, RbPartCategory] = {}
@@ -48,8 +73,11 @@ class RbParts:
     @classmethod
     def _initialize(cls):
         """
-        Load data from part_categories.csv and parts.csv.
-        Strict parsing is enforced.
+        Load data from part_categories.csv and parts.csv if not already loaded.
+        
+        This method ensures data integrity by validating the CSV structure 
+        and types during initialization. It enforces strict parsing and will 
+        raise an error if the CSV data is malformed or inconsistent.
         """
         if cls._initialized:
             return
@@ -101,6 +129,7 @@ class RbParts:
                     cls._parts_by_category_id[cat_id].append(part)
                     
                 except (ValueError, KeyError) as e:
+                    # Fatal error on malformed rows to prevent incorrect sorting.
                     raise ValueError(f"Error parsing parts.csv at line {line_num}: {e}") from e
 
         cls._initialized = True
@@ -108,6 +137,9 @@ class RbParts:
     def __new__(cls, part_num: str) -> RbPart:
         """
         Factory method to get an RbPart instance by part_num.
+        
+        This allows the rest of the system to easily obtain part metadata 
+        given a part number string (REQ-1).
         
         Args:
             part_num: The unique part number string (e.g. '3001').
@@ -130,7 +162,15 @@ class RbParts:
 
     @classmethod
     def get_category(cls, cat_id: int) -> RbPartCategory:
-        """Retrieve a category by its ID."""
+        """
+        Retrieve a category by its ID.
+        
+        Args:
+            cat_id: The unique integer ID of the category.
+            
+        Returns:
+            RbPartCategory instance.
+        """
         cls._initialize()
         if cat_id in cls._categories_by_id:
             return cls._categories_by_id[cat_id]
@@ -138,13 +178,25 @@ class RbParts:
 
     @classmethod
     def get_parts_in_category(cls, cat_id: int) -> List[RbPart]:
-        """Retrieve all parts belonging to a specific category ID."""
+        """
+        Retrieve all parts belonging to a specific category ID.
+        
+        Args:
+            cat_id: The unique integer ID of the category.
+            
+        Returns:
+            A list of RbPart instances belonging to the category.
+        """
         cls._initialize()
         # Return a copy to prevent modification of internal list
         return list(cls._parts_by_category_id.get(cat_id, []))
 
     @classmethod
     def get_all_categories(cls) -> List[RbPartCategory]:
-        """Return a list of all known categories."""
+        """
+        Return a list of all known categories.
+        
+        Useful for UI or debugging to see the full range of supported categories.
+        """
         cls._initialize()
         return list(cls._categories_by_id.values())

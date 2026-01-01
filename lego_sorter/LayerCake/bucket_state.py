@@ -1,11 +1,7 @@
 """Bucket state class for tracking quantities."""
 
-import logging
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 from .bucket_config import BucketConfig
-
-# Initialize logger for this module
-logger = logging.getLogger(__name__)
 
 
 class Bucket:
@@ -41,9 +37,8 @@ class Bucket:
         """
         if 0 <= criteria_idx < len(self.current_quantities):
             self.current_quantities[criteria_idx] += 1
-            logger.debug(f"Incremented bucket quantity at index {criteria_idx}. New count: {self.current_quantities[criteria_idx]}")
         else:
-            logger.error(f"Attempted to increment invalid criteria index {criteria_idx} in bucket.")
+            pass
             
     def reset_quantities(self):
         """
@@ -53,7 +48,6 @@ class Bucket:
         receives a new configuration.
         """
         self.current_quantities = [0] * len(self.config.criteria)
-        logger.info("Bucket quantities have been reset.")
 
     @property
     def is_complete(self) -> bool:
@@ -79,8 +73,16 @@ class Bucket:
                 # Still has room for at least one type of piece.
                 return False
         
-        logger.info("Bucket has reached full capacity for all criteria.")
         return True
+
+    def to_dict(self):
+        """Convert bucket state to a serializable dictionary."""
+        return {
+            "config": self.config.to_dict(),
+            "current_quantities": self.current_quantities,
+            "enabled": self.enabled,
+            "is_complete": self.is_complete
+        }
 
     def __repr__(self):
         return f"BucketState(config={self.config}, quantities={self.current_quantities})"

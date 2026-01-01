@@ -1,15 +1,11 @@
 """Criteria evaluator for Lego sorting."""
 
-import logging
-from typing import Any, Optional, Union
+from typing import Optional, Union
 
 import pyparsing as pp
 
-from ..rb_parts import RbParts, RbPart
+from ..rb_parts import RbPart
 from ..rb_colour import RbColours, RbColour
-
-# Initialize logger for this module
-logger = logging.getLogger(__name__)
 
 
 class CriteriaEvaluator:
@@ -33,10 +29,8 @@ class CriteriaEvaluator:
         try:
             # We parse the expression once at initialization to catch syntax errors early.
             # This is a 'fail-fast' approach to configuration errors.
-            self.parsed_expression = self.parser.parse_string(expression, parse_all=True)
-            logger.debug(f"Successfully parsed criteria expression: '{expression}'")
+            self.parsed_expression = self.parser.parseString(expression, parseAll=True)
         except pp.ParseException as exc:
-            logger.error(f"Failed to parse criteria expression '{expression}' at position {exc.col}: {exc.msg}")
             raise ValueError(f"Invalid criteria expression at character position {exc.col}: {exc.msg}") from exc
 
     def _build_parser(self):
@@ -91,15 +85,15 @@ class CriteriaEvaluator:
         def parse_comparison(tokens):
             # tokens is [key, op, [value1, value2, ...]]
             # Converting to a dict makes the recursive evaluation in _eval_node much cleaner.
-            return {"key": tokens[0], "op": tokens[1], "value": tokens[2].as_list()}
+            return {"key": tokens[0], "op": tokens[1], "value": tokens[2].asList()}
 
-        comparison = (KEY + OPERATOR + VALUE).set_parse_action(parse_comparison)
+        comparison = (KEY + OPERATOR + VALUE).setParseAction(parse_comparison)
 
         # Define the boolean logic using infix_notation
         # This handles operator precedence (AND before OR) and nested parentheses automatically.
-        expr = pp.infix_notation(comparison, [
-            (AND, 2, pp.OpAssoc.LEFT),
-            (OR, 2, pp.OpAssoc.LEFT),
+        expr = pp.infixNotation(comparison, [
+            (AND, 2, pp.opAssoc.LEFT),
+            (OR, 2, pp.opAssoc.LEFT),
         ])
 
         return expr
@@ -122,11 +116,9 @@ class CriteriaEvaluator:
                 rb_col = RbColours(rb_col)
             except ValueError:
                 # If invalid ID, we treat it as None or just keep it to fail checks later
-                logger.warning(f"Invalid color ID provided to evaluator: {rb_col}")
                 pass
 
         result = self._eval_node(self.parsed_expression[0], rb_part, rb_col)
-        logger.debug(f"Evaluated '{self.expression}' against part={rb_part}, col={rb_col} -> {result}")
         return result
 
     def __eq__(self, other):
