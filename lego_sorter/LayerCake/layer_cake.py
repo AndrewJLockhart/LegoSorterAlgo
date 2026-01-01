@@ -1,6 +1,8 @@
 """Layer class for representing a layer of buckets."""
 
 import json
+import logging
+from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union
 from .bucket_config import BucketConfig, BucketCriteria
 from .bucket_state import Bucket
@@ -8,9 +10,29 @@ from .criteria_evaluator import CriteriaEvaluator
 from ..rb_parts import RbParts
 from ..rb_colour import RbColours
 
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
+
+
+class SortingStatus(Enum):
+    """
+    Status codes for sorting results.
+    
+    These codes allow the caller to distinguish between a successful match, 
+    a complete lack of matching rules, and a rejection due to maintenance 
+    (disabled bucket) with fallback disabled.
+    """
+    MATCH = "MATCH"
+    NO_MATCH = "NO_MATCH"
+    DISABLED_REJECTED = "DISABLED_REJECTED"
+
 
 class Layer:
-    """A layer containing buckets at positions 1 to 16."""
+    """
+    A layer containing buckets at positions 1 to 16.
+    
+    A Layer represents a physical row or section of buckets in the sorting machine.
+    """
     
     def __init__(self):
         """Initialize a Layer with 16 empty buckets."""
@@ -22,23 +44,15 @@ class Layer:
         Args:
             position: Position of the bucket (1-16)
             config: BucketConfig object
-        
-        Raises:
-            ValueError: If position is not between 1 and 16
         """
         if not 1 <= position <= 16:
+            logger.error(f"Invalid bucket position: {position}")
             raise ValueError("Bucket position must be between 1 and 16")
         self.buckets[position] = Bucket(config)
+        logger.debug(f"Set bucket at position {position} with config: {config}")
     
     def get_bucket(self, position: int) -> Bucket:
-        """Get a bucket state at a specific position.
-        
-        Args:
-            position: Position to retrieve (1-16)
-        
-        Returns:
-            BucketState at the position
-        """
+        """Get a bucket state at a specific position."""
         if not 1 <= position <= 16:
             raise ValueError("Bucket position must be between 1 and 16")
         return self.buckets[position]
@@ -58,77 +72,63 @@ class Layer:
 
 
 class LayerCake:
-    """A collection of layers forming the sorting machine."""
+    """
+    A collection of layers forming the sorting machine.
+    
+    The LayerCake is the primary entry point for the sorting algorithm. It 
+    manages the global state, handles piece matching across all layers, and 
+    orchestrates dynamic bucket extensions.
+    """
     
     def __init__(self):
         """Initialize a LayerCake with no layers."""
         self.layer_cake: List[Layer] = []
     
     def add_layer(self, layer: Layer):
-        """Add a layer to the layer cake.
-        
-        Args:
-            layer: Layer object to add
-        """
+        """Add a layer to the layer cake."""
         self.layer_cake.append(layer)
+        logger.info(f"Added layer {len(self.layer_cake)} to the machine.")
     
     def get_layer(self, index: int) -> Layer:
-        """Get a layer at a specific index.
-        
-        Args:
-            index: Index of the layer (0-based)
-        
-        Returns:
-            Layer at the specified index
-        
-        Raises:
-            IndexError: If index is out of range
-        """
+        """Get a layer at a specific index (0-based)."""
         return self.layer_cake[index]
     
     def layer_count(self) -> int:
-        """Get the number of layers in the layer cake.
-        
-        Returns:
-            Number of layers
-        """
+        """Get the number of layers in the layer cake."""
         return len(self.layer_cake)
     
     def reset_quantities(self):
         """Reset all current quantities in the entire layer cake to 0."""
         for layer in self.layer_cake:
             layer.reset_quantities()
+        logger.info("Reset quantities for all buckets in the machine.")
     
     def reset_layer_quantities(self, layer_num: int):
-        """Reset current quantities for all buckets in a specific layer.
-        
-        Args:
-            layer_num: 1-based layer number.
-        """
+        """Reset current quantities for all buckets in a specific layer (1-based)."""
         self.get_layer(layer_num - 1).reset_quantities()
 
     def reset_bucket_quantities(self, layer_num: int, bucket_id: int):
-        """Reset current quantities for a specific bucket in a specific layer.
-        
-        Args:
-            layer_num: 1-based layer number.
-            bucket_id: 1-based bucket ID (1-16).
-        """
+        """Reset current quantities for a specific bucket in a specific layer."""
         self.get_layer(layer_num - 1).get_bucket(bucket_id).reset_quantities()
     
-    def find_best_bucket(self, part_num: str, color_id: Optional[int] = None) -> Tuple[Optional[int], Optional[int]]:
+    def find_best_bucket(self, part_num: str, color_id: Optional[int] = None) -> Tuple[Optional[int], Optional[int], SortingStatus]:
         """
         Find the most appropriate bucket for a given part and color.
         
-        Args:
-            part_num: Rebrickable part number.
-            color_id: Optional Rebrickable color ID.
-            
+        The algorithm follows these priority rules:
+        1. Specificity: The bucket with the most constraints in its criteria wins.
+        2. Layer Priority: If specificity is tied, the bucket in the higher layer 
+           (later in the list) wins.
+        3. Maintenance: If the best match is disabled, it may fallback to a less 
+           specific match or reject the piece entirely based on configuration.
+        
         Returns:
-            A tuple of (layer_num, bucket_id), or (None, None) if no bucket matches.
+            A tuple of (layer_num, bucket_id, status).
             Layer number is 1-based, bucket ID is 1-16.
         """
-        # Resolve part and color
+        logger.debug(f"Finding best bucket for part={part_num}, color={color_id}")
+
+        # Resolve part and color metadata
         try:
             rb_part = RbParts(part_num)
         except ValueError:
@@ -139,119 +139,140 @@ class LayerCake:
             try:
                 rb_col = RbColours(color_id)
             except ValueError:
-                rb_col = color_id # Pass ID if object lookup fails, evaluator handles it
+                # If lookup fails, we pass the raw ID. The evaluator handles both.
+                rb_col = color_id
 
-        best_layer_idx = None
-        best_bucket_id = None
-        best_criteria_idx = None
-        max_specificity = -1
+        # STEP 1: Find the absolute best match (including disabled buckets).
+        # We do this first because a disabled bucket might be the 'intended' 
+        # destination, and we need to know that to decide whether to reject 
+        # or fallback.
+        abs_best_layer_idx = None
+        abs_best_bucket_id = None
+        abs_max_specificity = -1
 
-        # Iterate through all layers and buckets
         for l_idx, layer in enumerate(self.layer_cake):
             for b_id in range(1, 17):
                 bucket = layer.get_bucket(b_id)
+                specificity, _ = bucket.evaluate(rb_part, rb_col)
                 
-                # Skip disabled buckets
-                if not bucket.enabled:
-                    continue
-                    
-                specificity, criteria_idx = bucket.evaluate(rb_part, rb_col)
-                
-                if specificity > -1:
-                    # Check if this bucket is better
-                    # 1. Higher specificity
-                    # 2. Same specificity but higher layer number (index)
+                # Tie-breaking: Higher layer index wins if specificity is equal.
+                if specificity > abs_max_specificity:
+                    abs_max_specificity = specificity
+                    abs_best_layer_idx = l_idx
+                    abs_best_bucket_id = b_id
+                elif specificity == abs_max_specificity and specificity > -1:
+                    if l_idx > abs_best_layer_idx:
+                        abs_best_layer_idx = l_idx
+                        abs_best_bucket_id = b_id
+
+        if abs_best_layer_idx is None:
+            logger.info(f"No matching bucket found for part={part_num}, color={color_id}")
+            return None, None, SortingStatus.NO_MATCH
+
+        # STEP 2: Handle the 'Enabled' state of the best match.
+        best_bucket = self.layer_cake[abs_best_layer_idx].get_bucket(abs_best_bucket_id)
+        if not best_bucket.enabled:
+            # If the best match is disabled, we check if fallback is allowed.
+            if not best_bucket.config.allow_fallback_if_disabled:
+                logger.info(f"Best match (L{abs_best_layer_idx+1}, B{abs_best_bucket_id}) is disabled and fallback is forbidden.")
+                return None, None, SortingStatus.DISABLED_REJECTED
+            
+            # Fallback logic: Find the best match among ENABLED buckets only.
+            logger.debug(f"Best match is disabled; searching for fallback among enabled buckets.")
+            best_layer_idx = None
+            best_bucket_id = None
+            best_criteria_idx = None
+            max_specificity = -1
+
+            for l_idx, layer in enumerate(self.layer_cake):
+                for b_id in range(1, 17):
+                    bucket = layer.get_bucket(b_id)
+                    if not bucket.enabled:
+                        continue
+                        
+                    specificity, criteria_idx = bucket.evaluate(rb_part, rb_col)
                     if specificity > max_specificity:
                         max_specificity = specificity
                         best_layer_idx = l_idx
                         best_bucket_id = b_id
                         best_criteria_idx = criteria_idx
-                    elif specificity == max_specificity:
-                        # If specificity is equal, use the one with highest layer number
+                    elif specificity == max_specificity and specificity > -1:
                         if l_idx > best_layer_idx:
                             best_layer_idx = l_idx
                             best_bucket_id = b_id
                             best_criteria_idx = criteria_idx
-                        # If same layer and same specificity, we keep the first one found (lowest bucket ID)
-                            
+            
+            if best_layer_idx is None:
+                logger.info("No enabled fallback bucket found.")
+                return None, None, SortingStatus.NO_MATCH
+        else:
+            # The absolute best match is enabled, so we use it.
+            _, best_criteria_idx = best_bucket.evaluate(rb_part, rb_col)
+            best_layer_idx = abs_best_layer_idx
+            best_bucket_id = abs_best_bucket_id
+
+        # STEP 3: Finalize the match and handle side effects (incrementing, extension).
         if best_layer_idx is not None:
             best_bucket_state = self.layer_cake[best_layer_idx].get_bucket(best_bucket_id)
             best_bucket_state.increment_quantity(best_criteria_idx)
             
-            # Check if bucket is now complete and needs extension
+            # Check if the bucket is now full and needs to 'spill over' to a placeholder.
             if best_bucket_state.is_complete:
+                logger.info(f"Bucket (L{best_layer_idx+1}, B{best_bucket_id}) is full. Triggering extension.")
                 self._handle_bucket_extension(best_bucket_state)
                 
-            return best_layer_idx + 1, best_bucket_id
+            return best_layer_idx + 1, best_bucket_id, SortingStatus.MATCH
             
-        return None, None
+        return None, None, SortingStatus.NO_MATCH
 
     def _handle_bucket_extension(self, completed_bucket: Bucket):
         """
         Find an available extension bucket and copy the configuration.
         
-        Args:
-            completed_bucket: The bucket that has just been completed.
+        This implements the 'spill-over' requirement, allowing the machine to 
+        continue sorting specific parts even after the primary bucket is full.
         """
-        for layer in self.layer_cake:
+        for l_idx, layer in enumerate(self.layer_cake):
             for b_id in range(1, 17):
                 target_bucket = layer.get_bucket(b_id)
                 if target_bucket.config.available_for_extension:
                     # Found a placeholder!
-                    # Copy the config and reset state
+                    # We copy the immutable config to the new bucket and reset its state.
+                    logger.info(f"Extending full bucket to placeholder at Layer {l_idx+1}, Bucket {b_id}")
                     target_bucket.config = completed_bucket.config
                     target_bucket.reset_quantities()
                     target_bucket.enabled = True
-                    return # Only extend to one bucket
+                    return # We only extend to the first available placeholder.
 
     @classmethod
     def from_json(cls, file_path: str) -> 'LayerCake':
         """
         Initialize a LayerCake from a JSON file.
         
-        The JSON format should be a list of layers, where each layer is a dictionary
-        mapping bucket positions (as strings) to a list of criteria objects.
-        The keys can be single integers (e.g., "1") or comma-separated lists (e.g., "1, 2, 3").
-        
-        Example format:
-        [
-            {
-                "1, 2": [
-                    {"expression": "RB_COL = Red", "required": 10},
-                    {"expression": "RB_PT = 3001"}
-                ],
-                "5": [ ... ]
-            },
-            ...
-        ]
-        
-        Args:
-            file_path: Path to the JSON file.
-            
-        Returns:
-            Initialized LayerCake object.
+        This factory method handles the complex parsing of the configuration DSL, 
+        supporting both shorthand lists and detailed object notation.
         """
+        logger.info(f"Loading LayerCake configuration from {file_path}")
         with open(file_path, 'r') as f:
             data = json.load(f)
             
         cake = cls()
         
-        for layer_data in data:
+        for layer_idx, layer_data in enumerate(data):
             layer = Layer()
             seen_positions = set()
             
             for pos_str, criteria_list_data in layer_data.items():
-                # Parse positions (handle single int or comma-separated list)
+                # Parse positions (handle single int or comma-separated list like "1, 2, 3")
                 try:
                     positions = [int(p.strip()) for p in pos_str.split(',')]
                 except ValueError:
-                    # Handle case where key might not be a simple integer list
-                    # For now, we assume valid input as per requirements
+                    logger.warning(f"Skipping invalid bucket position key in JSON: '{pos_str}'")
                     continue
 
                 for position in positions:
                     if position in seen_positions:
-                        raise ValueError(f"Bucket position {position} defined multiple times in the same layer.")
+                        raise ValueError(f"Bucket position {position} defined multiple times in layer {layer_idx+1}.")
                     seen_positions.add(position)
 
                     criteria_list = []
@@ -259,7 +280,7 @@ class LayerCake:
                     allow_ext = False
 
                     if isinstance(criteria_list_data, list):
-                        # Shorthand: just a list of criteria
+                        # Shorthand notation: just a list of criteria strings or objects.
                         for criteria_data in criteria_list_data:
                             if isinstance(criteria_data, str):
                                 expression = criteria_data
@@ -271,9 +292,10 @@ class LayerCake:
                             criteria_list.append(BucketCriteria(evaluator, required))
                         allow_ext = None
                     elif isinstance(criteria_list_data, dict):
-                        # Full object: can have directives and criteria
+                        # Detailed object notation: allows for directives like 'available_for_extension'.
                         available_for_ext = criteria_list_data.get("available_for_extension", False)
                         allow_ext = criteria_list_data.get("allow_extension")
+                        allow_fallback = criteria_list_data.get("allow_fallback_if_disabled", True)
                         
                         raw_criteria = criteria_list_data.get("criteria", [])
                         for criteria_data in raw_criteria:
@@ -289,7 +311,8 @@ class LayerCake:
                     config = BucketConfig(
                         criteria=tuple(criteria_list),
                         available_for_extension=available_for_ext,
-                        allow_extension=allow_ext
+                        allow_extension=allow_ext,
+                        allow_fallback_if_disabled=allow_fallback if isinstance(criteria_list_data, dict) else True
                     )
                     layer.set_bucket(position, config)
             cake.add_layer(layer)

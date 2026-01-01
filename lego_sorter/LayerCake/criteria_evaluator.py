@@ -1,5 +1,6 @@
 """Criteria evaluator for Lego sorting."""
 
+import logging
 from typing import Any, Optional, Union
 
 import pyparsing as pp
@@ -7,20 +8,47 @@ import pyparsing as pp
 from ..rb_parts import RbParts, RbPart
 from ..rb_colour import RbColours, RbColour
 
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
+
 
 class CriteriaEvaluator:
-    """Evaluates boolean criteria strings against Lego/BrickLink metadata."""
+    """
+    Evaluates boolean criteria strings against Lego/BrickLink metadata.
+    
+    This class uses a Domain Specific Language (DSL) to allow users to define
+    complex matching rules for Lego pieces. It uses pyparsing to build a 
+    recursive descent parser for boolean logic.
+    """
 
     def __init__(self, expression: str):
-        """Initialize with a criteria expression string."""
+        """
+        Initialize with a criteria expression string.
+        
+        The expression is parsed immediately to ensure it's valid before 
+        being used in the sorting machine.
+        """
         self.expression = expression
         self.parser = self._build_parser()
         try:
-            self.parsed_expression = self.parser.parseString(expression, parseAll=True)
+            # We parse the expression once at initialization to catch syntax errors early.
+            # This is a 'fail-fast' approach to configuration errors.
+            self.parsed_expression = self.parser.parse_string(expression, parse_all=True)
+            logger.debug(f"Successfully parsed criteria expression: '{expression}'")
         except pp.ParseException as exc:
+            logger.error(f"Failed to parse criteria expression '{expression}' at position {exc.col}: {exc.msg}")
             raise ValueError(f"Invalid criteria expression at character position {exc.col}: {exc.msg}") from exc
 
     def _build_parser(self):
+        """
+        Constructs the pyparsing grammar for the criteria DSL.
+        
+        The grammar supports:
+        - Keys: RB_COL, RB_PT, RB_PT_CAT
+        - Operators: =, !=
+        - Logic: AND, OR, and | (pipe) for multiple values
+        - Grouping: Parentheses ()
+        """
         # Define keywords
         AND = pp.CaselessKeyword("AND")
         OR = pp.CaselessKeyword("OR")
@@ -62,14 +90,16 @@ class CriteriaEvaluator:
         # We use a ParseAction to convert the tokens into a dictionary for easier evaluation
         def parse_comparison(tokens):
             # tokens is [key, op, [value1, value2, ...]]
-            return {"key": tokens[0], "op": tokens[1], "value": tokens[2].asList()}
+            # Converting to a dict makes the recursive evaluation in _eval_node much cleaner.
+            return {"key": tokens[0], "op": tokens[1], "value": tokens[2].as_list()}
 
-        comparison = (KEY + OPERATOR + VALUE).setParseAction(parse_comparison)
+        comparison = (KEY + OPERATOR + VALUE).set_parse_action(parse_comparison)
 
-        # Define the boolean logic using infixNotation
-        expr = pp.infixNotation(comparison, [
-            (AND, 2, pp.opAssoc.LEFT),
-            (OR, 2, pp.opAssoc.LEFT),
+        # Define the boolean logic using infix_notation
+        # This handles operator precedence (AND before OR) and nested parentheses automatically.
+        expr = pp.infix_notation(comparison, [
+            (AND, 2, pp.OpAssoc.LEFT),
+            (OR, 2, pp.OpAssoc.LEFT),
         ])
 
         return expr
@@ -86,14 +116,18 @@ class CriteriaEvaluator:
             True if the criteria is met, False otherwise.
         """
         # Resolve rb_col to Object if it's an int
+        # This allows the caller to pass either a rich object or a simple ID.
         if isinstance(rb_col, int):
             try:
                 rb_col = RbColours(rb_col)
             except ValueError:
                 # If invalid ID, we treat it as None or just keep it to fail checks later
+                logger.warning(f"Invalid color ID provided to evaluator: {rb_col}")
                 pass
 
-        return self._eval_node(self.parsed_expression[0], rb_part, rb_col)
+        result = self._eval_node(self.parsed_expression[0], rb_part, rb_col)
+        logger.debug(f"Evaluated '{self.expression}' against part={rb_part}, col={rb_col} -> {result}")
+        return result
 
     def __eq__(self, other):
         if not isinstance(other, CriteriaEvaluator):
@@ -104,10 +138,13 @@ class CriteriaEvaluator:
         return f"CriteriaEvaluator('{self.expression}')"
 
     @property
-    def specificity(self) -> int:
+    def specificity_score(self) -> int:
         """
         Calculate the specificity score of the expression.
         Higher score means more specific (more constraints).
+        
+        This is used by the sorting algorithm to ensure that pieces are 
+        assigned to the most precise bucket available.
         """
         return self._count_constraints(self.parsed_expression[0])
 

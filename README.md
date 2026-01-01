@@ -54,6 +54,7 @@ The `LayerCake` can be initialized from a JSON file. The format supports both a 
 | **`required`** | `Int` | The maximum number of pieces this criteria will accept. If omitted, the bucket has infinite capacity. |
 | **`allow_extension`** | `Bool` | If `true`, when this bucket reaches its `required` capacity, the algorithm will look for a placeholder to copy these rules to. Defaults to `true` if criteria are present. |
 | **`available_for_extension`** | `Bool` | Marks this bucket as a **Placeholder**. It has no rules of its own but is available to receive rules from a full bucket. |
+| **`allow_fallback_if_disabled`** | `Bool` | If `false`, when this bucket is the best match but is disabled, the algorithm will reject the part instead of looking for a less specific match. Defaults to `true`. |
 
 ## Operational Behavior
 
@@ -97,6 +98,29 @@ Represents a single layer in the sorting machine. Contains:
 ### LayerCake
 The main object representing the entire sorting machine state. Contains:
 - A list of `Layer` objects.
+- `find_best_bucket(part_num, color)`: Returns a tuple `(layer_num, bucket_id, status)`.
+
+## Handling Results
+
+The `find_best_bucket` method returns a `SortingStatus` to help the caller understand why a piece was assigned or rejected:
+
+| Status | Description |
+| :--- | :--- |
+| `MATCH` | A suitable bucket was found and the piece should be sorted there. |
+| `NO_MATCH` | No bucket in the entire machine matches the piece's criteria. |
+| `DISABLED_REJECTED` | The best matching bucket is currently disabled, and `allow_fallback_if_disabled` is set to `false`. |
+
+Example usage:
+```python
+layer_idx, bucket_id, status = cake.find_best_bucket("3001", "Red")
+
+if status == SortingStatus.MATCH:
+    print(f"Sort into Layer {layer_idx}, Bucket {bucket_id}")
+elif status == SortingStatus.DISABLED_REJECTED:
+    print("Best match is disabled and fallback is forbidden.")
+else:
+    print("No matching bucket found.")
+```
 - Methods to load configuration from JSON.
 
 ## Installation
@@ -195,8 +219,15 @@ In this example:
 The `LayerCake` provides a method to determine where a piece should go based on the current state:
 
 ```python
-# Returns (layer_num, bucket_id)
-layer, bucket = cake.find_best_bucket(part_num="3001", color_id=4)
+# Returns (layer_num, bucket_id, status)
+layer, bucket, status = cake.find_best_bucket(part_num="3001", color_id=4)
+
+if status == SortingStatus.MATCH:
+    print(f"Piece goes to Layer {layer}, Bucket {bucket}")
+elif status == SortingStatus.DISABLED_REJECTED:
+    print("Best match is currently disabled for maintenance.")
+else:
+    print("No matching bucket found.")
 ```
 
 The algorithm selects the bucket based on:
