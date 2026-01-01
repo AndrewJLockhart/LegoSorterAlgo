@@ -67,7 +67,7 @@ class RbColours:
                          raise ValueError(f"Invalid boolean value for 'is_trans': {row['is_trans']}")
                     c_is_trans = is_trans_str == 'true'
                     
-                    color = RB_Colour(c_id, c_name, c_is_trans)
+                    color = RbColour(c_id, c_name, c_is_trans)
                     
                     cls._by_id[c_id] = color
                     # Store by name (case-insensitive for robust lookup)

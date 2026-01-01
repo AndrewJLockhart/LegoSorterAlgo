@@ -1,9 +1,82 @@
 # LegoSorterAlgo
-Code to hold state of Lego Sorter Buckets and given a piece decide where it should go.
 
-## Overview
+A sophisticated algorithm for managing the state and logic of a multi-layered Lego sorting machine.
 
-This project provides shared code for describing the state of a Sorting Machine. The machine is composed of multiple layers, and each layer contains buckets at positions 1 to 16. Each bucket has a configuration that defines what should go into it using sorting criteria.
+## Problem Statement
+
+Sorting large collections of Lego pieces is a complex task that requires balancing specificity, capacity, and physical machine constraints. The `LegoSorterAlgo` solves this by providing a "LayerCake" architecture that allows users to define complex sorting rules across multiple physical layers of buckets.
+
+The algorithm must:
+1.  **Match Pieces to Buckets**: Given a part number and color, find the most specific bucket that matches.
+2.  **Manage Capacity**: Track how many pieces are in each bucket and stop accepting pieces when a target quantity is reached.
+3.  **Handle Dynamic Extensions**: Automatically "spill over" sorting rules to empty placeholder buckets when a primary bucket is full.
+4.  **Support Maintenance**: Allow individual buckets to be disabled (e.g., for emptying) without stopping the entire machine, with the algorithm automatically falling back to the next best match.
+
+## Core Concepts
+
+### The LayerCake Architecture
+The machine is organized into **Layers**. Each layer contains **16 Buckets** (indexed 1-16).
+*   **Specificity**: The algorithm always chooses the most specific match first. Specificity is determined by the number of constraints in the criteria (e.g., `RB_COL = Red AND RB_PT = 3001` is more specific than just `RB_COL = Red`).
+*   **Layer Priority**: If two buckets have the same specificity, the one in the higher layer (later in the list) is chosen.
+
+### Bucket Configuration & State
+We distinguish between the **Configuration** (the rules) and the **State** (the current count and status).
+*   **BucketConfig**: Immutable rules defining what a bucket accepts.
+*   **Bucket**: Mutable state tracking `current_quantities` and whether the bucket is `enabled`.
+
+## JSON Configuration Support
+
+The `LayerCake` can be initialized from a JSON file. The format supports both a high-level shorthand for simple setups and a detailed object notation for advanced features.
+
+### Example JSON
+```json
+[
+  {
+    "1": ["RB_COL = Red"],
+    "2, 3": {
+      "criteria": [
+        {"expression": "RB_PT = 3001", "required": 50},
+        {"expression": "RB_PT = 3002", "required": 50}
+      ],
+      "allow_extension": true
+    },
+    "16": { "available_for_extension": true }
+  }
+]
+```
+
+### Parameter Reference
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| **`criteria`** | `List` | A list of rules for the bucket. Can be simple strings (expressions) or objects with `expression` and `required`. |
+| **`expression`** | `String` | A DSL string (e.g., `RB_COL = Blue \| Red`) evaluated by the `CriteriaEvaluator`. |
+| **`required`** | `Int` | The maximum number of pieces this criteria will accept. If omitted, the bucket has infinite capacity. |
+| **`allow_extension`** | `Bool` | If `true`, when this bucket reaches its `required` capacity, the algorithm will look for a placeholder to copy these rules to. Defaults to `true` if criteria are present. |
+| **`available_for_extension`** | `Bool` | Marks this bucket as a **Placeholder**. It has no rules of its own but is available to receive rules from a full bucket. |
+
+## Operational Behavior
+
+### 1. Specificity Matching
+When a piece is processed, the algorithm evaluates all enabled buckets. It calculates a "specificity score" based on the number of conditions in the criteria. The piece is assigned to the bucket with the highest score.
+
+### 2. Enabling/Disabling Buckets
+Buckets can be disabled at runtime (e.g., `bucket.enabled = False`). When a bucket is disabled, the `find_best_bucket` logic will skip it and automatically find the next best match (the next highest specificity).
+
+### 3. Automatic Extension
+If a bucket has `allow_extension: true` and all its criteria have reached their `required` quantity, the `LayerCake` will:
+1.  Search for the first bucket in the machine marked with `available_for_extension: true`.
+2.  Copy the configuration from the full bucket to the placeholder.
+3.  Reset the quantities in the new bucket to zero.
+4.  The placeholder is now an active sorting bucket for those specific pieces.
+
+## Criteria DSL
+
+The `CriteriaEvaluator` supports a rich expression language:
+*   **Keys**: `RB_COL` (Color name or ID), `RB_PT` (Part number).
+*   **Operators**: `=`, `!=`.
+*   **Logic**: `AND`, `OR`, and the `|` shorthand for multiple values (e.g., `RB_COL = Red | Blue | Green`).
+*   **Grouping**: Use parentheses `()` to define precedence.
 
 ## Structure
 
@@ -59,36 +132,86 @@ cake.add_layer(layer)
 
 ### JSON Configuration
 
-You can load the machine configuration from a JSON file:
+The `LayerCake` can be initialized from a JSON file, which defines the layers, buckets, and sorting criteria.
 
 ```python
 cake = LayerCake.from_json("config.json")
 ```
 
-Example `config.json`:
+#### JSON Structure
+- **Outer List:** Represents the sequence of layers in the machine (Layer 1, Layer 2, etc.).
+- **Layer Object:** A dictionary where keys are bucket positions (1-16) and values are lists of criteria.
+- **Bucket Keys:** Can be a single integer (`"1"`) or a comma-separated list (`"1, 2, 3"`) to apply the same rules to multiple buckets.
+- **Criteria Object:**
+    - `expression`: A string defining the matching rule.
+    - `required` (optional): An integer specifying how many items matching this rule should be collected before the rule is ignored.
+
+#### Criteria Expressions
+The `expression` string supports boolean logic and field comparisons:
+- **Fields:** `RB_COL` (Color), `RB_PT` (Part Number), `RB_PT_CAT` (Part Category).
+- **Operators:** `=` (equals), `!=` (not equals).
+- **Logic:** `AND`, `OR`, and parentheses `()` for grouping.
+- **Shorthand (Pipe):** Use `|` to match multiple values in one field (e.g., `RB_COL = Red | Blue`).
+
+#### Detailed Example (`config.json`)
 ```json
 [
     {
         "1, 2": [
-            {"expression": "RB_COL = Red", "required": 10},
-            {"expression": "RB_PT = 3001"}
+            {
+                "expression": "RB_COL = Red | Dark Red",
+                "required": 50
+            },
+            {
+                "expression": "RB_PT = 3001 AND RB_COL = White",
+                "required": 10
+            }
         ],
         "5": [
-            {"expression": "RB_COL = Blue"}
+            {
+                "expression": "RB_PT_CAT = Bricks OR RB_PT_CAT = Plates"
+            }
         ]
     },
     {
-        "3": [
-            {"expression": "RB_COL = Green", "required": 5}
+        "16": [
+            {
+                "expression": "RB_COL != Black | White | Gray",
+                "required": 100
+            }
         ]
     }
 ]
 ```
-- The outer list represents layers.
-- Each object represents a layer, mapping bucket positions to criteria.
-- Keys can be single positions ("1") or comma-separated lists ("1, 2") to apply the same configuration to multiple buckets.
 
-For a complete example, see `example.py`.
+In this example:
+- **Layer 1:**
+    - Buckets 1 and 2 will collect up to 50 Red or Dark Red pieces, OR up to 10 White 2x4 Bricks.
+    - Bucket 5 will collect any piece that is categorized as either a "Brick" or a "Plate".
+- **Layer 2:**
+    - Bucket 16 will collect up to 100 pieces that are NOT Black, White, or Gray.
+
+### Finding the Best Bucket
+The `LayerCake` provides a method to determine where a piece should go based on the current state:
+
+```python
+# Returns (layer_num, bucket_id)
+layer, bucket = cake.find_best_bucket(part_num="3001", color_id=4)
+```
+
+The algorithm selects the bucket based on:
+1. **Highest Specificity:** The rule with the most constraints wins.
+2. **Highest Layer:** If specificity is tied, the bucket further down the machine is chosen.
+3. **Quantity Limits:** Rules that have reached their `required` quantity are ignored.
+
+### Resetting State
+You can clear the collected quantities at different levels:
+
+```python
+cake.reset_quantities()                    # Reset everything
+cake.reset_layer_quantities(1)             # Reset Layer 1
+cake.reset_bucket_quantities(1, 5)         # Reset Bucket 5 in Layer 1
+```
 
 ## Running Tests
 

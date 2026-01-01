@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import MagicMock, patch
-from lego_sorter.criteria_evaluator import CriteriaEvaluator
+from lego_sorter.LayerCake.criteria_evaluator import CriteriaEvaluator
 from lego_sorter.rb_parts import RbPart, RbPartCategory
 from lego_sorter.rb_colour import RbColour, RbColours
 

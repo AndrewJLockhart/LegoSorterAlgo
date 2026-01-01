@@ -17,7 +17,7 @@ def main():
     # Bucket 1: Red bricks
     # Criteria: (Evaluator, Required, Current)
     config1 = BucketConfig()
-    config1.add_criteria(CriteriaEvaluator("RB_COL = Red"), required_quantity=10)
+    config1.add_criteria(CriteriaEvaluator("(RB_COL = Red) OR (RB_COL = Dark Red)"), required_quantity=10)
     config1.add_criteria(CriteriaEvaluator("RB_PT = 3001")) # Brick 2x4
     layer1.set_bucket(1, config1)
     print(f"  Added Bucket at position 1 with criteria: {config1.criteria}")

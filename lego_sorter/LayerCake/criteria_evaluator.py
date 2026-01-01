@@ -52,13 +52,17 @@ class CriteriaEvaluator:
         valid_word = ~reserved + pp.Word(word_chars)
         
         # A value can be multiple words separated by spaces (e.g. "Maersk Blue")
-        VALUE = pp.Combine(valid_word + pp.ZeroOrMore(pp.White() + valid_word))
+        SINGLE_VALUE = pp.Combine(valid_word + pp.ZeroOrMore(pp.White() + valid_word))
+        
+        # Support multiple values separated by | (e.g. "Red | Blue")
+        PIPE = pp.Suppress("|")
+        VALUE = pp.Group(SINGLE_VALUE + pp.ZeroOrMore(PIPE + SINGLE_VALUE))
 
         # Define the comparison term
         # We use a ParseAction to convert the tokens into a dictionary for easier evaluation
         def parse_comparison(tokens):
-            # tokens is [key, op, value]
-            return {"key": tokens[0], "op": tokens[1], "value": tokens[2]}
+            # tokens is [key, op, [value1, value2, ...]]
+            return {"key": tokens[0], "op": tokens[1], "value": tokens[2].asList()}
 
         comparison = (KEY + OPERATOR + VALUE).setParseAction(parse_comparison)
 
@@ -91,6 +95,41 @@ class CriteriaEvaluator:
 
         return self._eval_node(self.parsed_expression[0], rb_part, rb_col)
 
+    def __eq__(self, other):
+        if not isinstance(other, CriteriaEvaluator):
+            return False
+        return self.expression == other.expression
+
+    def __repr__(self):
+        return f"CriteriaEvaluator('{self.expression}')"
+
+    @property
+    def specificity(self) -> int:
+        """
+        Calculate the specificity score of the expression.
+        Higher score means more specific (more constraints).
+        """
+        return self._count_constraints(self.parsed_expression[0])
+
+    def _count_constraints(self, node) -> int:
+        if isinstance(node, dict):
+            val = node.get("value")
+            if isinstance(val, list):
+                return len(val)
+            return 1
+        
+        if hasattr(node, "asList"):
+            node = node.asList()
+            
+        if isinstance(node, list):
+            count = 0
+            for item in node:
+                if item not in ("AND", "OR"):
+                    count += self._count_constraints(item)
+            return count
+            
+        return 0
+
     def _eval_node(self, node, rb_part, rb_col):
         if isinstance(node, dict):
             return self._check_condition(node["key"], node["op"], node["value"], rb_part, rb_col)
@@ -118,45 +157,42 @@ class CriteriaEvaluator:
 
         return False
 
-    def _check_condition(self, key, op, value_str, rb_part, rb_col):
-        # Helper to handle = vs !=
-        def apply_op(actual, expected):
-            if op == "=":
-                return actual == expected
-            elif op == "!=":
-                return actual != expected
-            return False
-
+    def _check_condition(self, key, op, values, rb_part, rb_col):
         key_upper = key.upper()
         
-        if key_upper == "RB_COL":
-            if not isinstance(rb_col, RbColour):
-                return False
+        # Evaluate each value in the list
+        results = []
+        for value_str in values:
+            match = False
+            if key_upper == "RB_COL":
+                if isinstance(rb_col, RbColour):
+                    # Check against ID
+                    if value_str.isdigit() and rb_col.id == int(value_str):
+                        match = True
+                    # Check against Name
+                    elif rb_col.name.lower() == value_str.lower():
+                        match = True
             
-            # Check against ID
-            if value_str.isdigit() and apply_op(rb_col.id, int(value_str)):
-                return True
-            
-            # Check against Name
-            if apply_op(rb_col.name.lower(), value_str.lower()):
-                return True
-                
-            return False
+            elif key_upper == "RB_PT":
+                if rb_part is not None and rb_part.part_num == value_str:
+                    match = True
 
-        elif key_upper == "RB_PT":
-            if rb_part is None:
-                return False
-            return apply_op(rb_part.part_num, value_str)
-
-        elif key_upper == "RB_PT_CAT":
-            if rb_part is None:
-                return False
+            elif key_upper == "RB_PT_CAT":
+                if rb_part is not None:
+                    # Check against Category ID
+                    if value_str.isdigit() and rb_part.category.id == int(value_str):
+                        match = True
+                    # Check against Category Name
+                    elif rb_part.category.name.lower() == value_str.lower():
+                        match = True
             
-            # Check against Category ID
-            if value_str.isdigit():
-                return apply_op(rb_part.category.id, int(value_str))
-            
-            # Check against Category Name
-            return apply_op(rb_part.category.name.lower(), value_str.lower())
+            results.append(match)
 
+        # If op is "=", we return True if ANY value matches.
+        # If op is "!=", we return True if NONE of the values match.
+        if op == "=":
+            return any(results)
+        elif op == "!=":
+            return not any(results)
+        
         return False
