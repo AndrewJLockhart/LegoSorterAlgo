@@ -113,7 +113,37 @@ class TestBucketConfig(unittest.TestCase):
         # allow_extension WITH criteria should pass
         config = BucketConfig(criteria=(crit1,), allow_extension=True)
         self.assertEqual(len(config.criteria), 1)
-        self.assertTrue(config.allow_extension)
+
+    def test_placeholder_restrictions(self):
+        """
+        REQ-3: Handle Dynamic Extensions.
+        Test that available_for_extension (placeholder) buckets cannot have any other state.
+        """
+        # Placeholder with name should fail
+        with self.assertRaises(ValueError):
+            BucketConfig(available_for_extension=True, name="My Placeholder")
+            
+        # Placeholder with criteria should fail
+        eval1 = CriteriaEvaluator("RB_COL = Blue")
+        crit1 = BucketCriteria(eval1)
+        with self.assertRaises(ValueError):
+            BucketConfig(available_for_extension=True, criteria=(crit1,))
+            
+        # Placeholder with allow_extension=True should fail
+        with self.assertRaises(ValueError):
+            BucketConfig(available_for_extension=True, allow_extension=True)
+            
+        # Placeholder with allow_fallback_if_disabled=False should fail
+        with self.assertRaises(ValueError):
+            BucketConfig(available_for_extension=True, allow_fallback_if_disabled=False)
+            
+        # Valid placeholder
+        config = BucketConfig(available_for_extension=True)
+        self.assertTrue(config.available_for_extension)
+        self.assertIsNone(config.name)
+        self.assertEqual(len(config.criteria), 0)
+        self.assertFalse(config.allow_extension)
+        self.assertTrue(config.allow_fallback_if_disabled)
 
 
 class TestBucketState(unittest.TestCase):
@@ -621,7 +651,6 @@ class TestIntegration(unittest.TestCase):
                     "criteria": ["RB_COL = Red"]
                 },
                 "16": {
-                    "name": "Overflow",
                     "available_for_extension": True
                 }
             }
@@ -636,7 +665,7 @@ class TestIntegration(unittest.TestCase):
             
             # Verify names
             self.assertEqual(cake.get_layer(0).get_bucket(1).config.name, "Red Bricks")
-            self.assertEqual(cake.get_layer(0).get_bucket(16).config.name, "Overflow")
+            self.assertIsNone(cake.get_layer(0).get_bucket(16).config.name)
             
             # Verify summarize
             summary_json = cake.summarize()
@@ -644,7 +673,7 @@ class TestIntegration(unittest.TestCase):
             
             self.assertEqual(len(summary), 1) # 1 layer
             self.assertEqual(summary[0]["1"]["config"]["name"], "Red Bricks")
-            self.assertEqual(summary[0]["16"]["config"]["name"], "Overflow")
+            self.assertIsNone(summary[0]["16"]["config"]["name"])
             self.assertEqual(summary[0]["1"]["current_quantities"], [0])
             self.assertTrue(summary[0]["1"]["enabled"])
             

@@ -55,11 +55,15 @@ class BucketConfig:
             object.__setattr__(self, 'allow_extension', default_val)
 
         # Validation logic to prevent impossible states:
-        if self.available_for_extension and self.allow_extension:
-            raise ValueError("A bucket cannot be both a source and a destination for extension simultaneously.")
-        
-        if self.available_for_extension and self.criteria:
-            raise ValueError("BucketConfig cannot have criteria if available_for_extension is set.")
+        if self.available_for_extension:
+            if self.name is not None:
+                raise ValueError("A placeholder bucket (available_for_extension) cannot have a name.")
+            if self.criteria:
+                raise ValueError("A placeholder bucket cannot have criteria.")
+            if self.allow_extension:
+                raise ValueError("A placeholder bucket cannot have allow_extension set to True.")
+            if not self.allow_fallback_if_disabled:
+                raise ValueError("A placeholder bucket cannot have allow_fallback_if_disabled set to False.")
             
         if self.allow_extension and not self.criteria:
             # You can't extend something that has no rules to copy.

@@ -1,6 +1,6 @@
 # LegoSorterAlgo
 
-A sophisticated algorithm for managing the state and logic of a multi-layered Lego sorting machine.
+A algorithm for managing the state and logic of a multi-layered Lego sorting machine.
 
 ## Problem Statement
 
@@ -53,8 +53,8 @@ The `LayerCake` can be initialized from a JSON file. The format supports both a 
 | **`expression`** | `String` | A DSL string (e.g., `RB_COL = Blue \| Red`) evaluated by the `CriteriaEvaluator`. |
 | **`required`** | `Int` | The maximum number of pieces this criteria will accept. If omitted, the bucket has infinite capacity. |
 | **`allow_extension`** | `Bool` | If `true`, when this bucket reaches its `required` capacity, the algorithm will look for a placeholder to copy these rules to. Defaults to `true` if criteria are present. |
-| **`available_for_extension`** | `Bool` | Marks this bucket as a **Placeholder**. It has no rules of its own but is available to receive rules from a full bucket. |
-| **`allow_fallback_if_disabled`** | `Bool` | If `false`, when this bucket is the best match but is disabled, the algorithm will reject the part instead of looking for a less specific match. Defaults to `true`. |
+| **`available_for_extension`** | `Bool` | Marks this bucket as a **Placeholder**. It has no rules of its own and cannot have any other state (like a name) set. It is available to receive rules from a full bucket. |
+| **`allow_fallback_if_disabled`** | `Bool` | If `false`, when this bucket is the best match but is disabled, the algorithm will reject the part instead of looking for a less specific match. Defaults to `true`. This would allow the caller to then pause and not send any further bits into the sorter.|
 
 ## Operational Behavior
 
@@ -210,7 +210,7 @@ The `expression` string supports boolean logic and field comparisons:
 
 In this example:
 - **Layer 1:**
-    - Buckets 1 and 2 will collect up to 50 Red or Dark Red pieces, OR up to 10 White 2x4 Bricks.
+    - Buckets 1 and 2 will collect up to 50 Red or Dark Red pieces AND up to 10 White 2x4 Bricks (Part 3001). The bucket will continue to accept pieces for either criteria until its specific limit is reached, but the bucket is only considered "full" (triggering automatic extension) once **both** independent limits are met.
     - Bucket 5 will collect any piece that is categorized as either a "Brick" or a "Plate".
 - **Layer 2:**
     - Bucket 16 will collect up to 100 pieces that are NOT Black, White, or Gray.
